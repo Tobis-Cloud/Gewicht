@@ -998,27 +998,12 @@
         </div>
       </section>
 
-      <!-- Google Sheets Sync -->
-      <section class="section">
-        <h3 class="section-title">Google Tabellen Sync</h3>
-        <button type="button" class="btn" id="btnImportGoogle">Aus Google Tabelle laden</button>
-      </section>
-
       <!-- Verlaufsliste -->
       <section class="section history-section">
         <h3 class="section-title">Einträge</h3>
         <div class="history-list" id="historyList">
           <!-- Wird dynamisch befüllt -->
         </div>
-      </section>
-
-      <!-- Dezente Export/Import Knöpfe -->
-      <section class="section backup-section">
-        <div class="backup-row">
-          <button class="btn-mini" id="btnExport" title="Daten als JSON exportieren">Export</button>
-          <button class="btn-mini" id="btnImport" title="Daten aus JSON importieren">Import</button>
-        </div>
-        <input type="file" id="fileImport" accept=".json" style="display: none;">
       </section>
     </div>
   </div>
@@ -1545,87 +1530,7 @@
     menuToggle.addEventListener('click', toggleMenu);
     backdrop.addEventListener('click', toggleMenu);
 
-    // 5. MINI EXPORT & IMPORT STEUERUNG
-
-    // Daten exportieren (JSON Download)
-    document.getElementById('btnExport').addEventListener('click', () => {
-      if (entries.length === 0 && targetWeight === null) {
-        alert('Keine Daten zum Exportieren vorhanden.');
-        return;
-      }
-
-      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify({
-        entries: entries,
-        targetWeight: targetWeight
-      }, null, 2));
-
-      const downloadAnchor = document.createElement('a');
-      downloadAnchor.setAttribute("href", dataStr);
-      downloadAnchor.setAttribute("download", "gewicht_daten.json");
-      document.body.appendChild(downloadAnchor);
-      downloadAnchor.click();
-      downloadAnchor.remove();
-    });
-
-    // Import über Klick auslösen
-    document.getElementById('btnImport').addEventListener('click', () => {
-      document.getElementById('fileImport').click();
-    });
-
-    // Datei einlesen und validieren
-    document.getElementById('fileImport').addEventListener('change', (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-
-      const reader = new FileReader();
-      reader.onload = function(evt) {
-        try {
-          const imported = JSON.parse(evt.target.result);
-          if (imported && Array.isArray(imported.entries)) {
-            // Validierung der Struktur (inklusive YYYY-MM-DD Datumsformat)
-            const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-            const validEntries = imported.entries.filter(item => {
-              return item.date && typeof item.date === 'string' && dateRegex.test(item.date) &&
-                     item.weight && !isNaN(parseFloat(item.weight));
-            }).map(item => ({
-              date: item.date,
-              weight: parseFloat(item.weight)
-            }));
-
-            entries = validEntries;
-            localStorage.setItem('weight_tracker_data', JSON.stringify(entries));
-
-            if (imported.targetWeight !== undefined) {
-              targetWeight = imported.targetWeight ? parseFloat(imported.targetWeight) : null;
-              if (targetWeight) {
-                localStorage.setItem('weight_tracker_target', targetWeight.toString());
-                document.getElementById('inputGoal').value = targetWeight;
-              } else {
-                localStorage.removeItem('weight_tracker_target');
-                document.getElementById('inputGoal').value = '';
-              }
-            }
-
-            // Alles neu rendern
-            updateKPIs();
-            updateHistoryList();
-            setFormDefaults();
-            renderChart();
-            alert('Daten erfolgreich importiert!');
-
-            // Komplettes Backup auf Google Sheets hochladen
-            syncToGoogleSheet('sync_all', entries);
-          } else {
-            alert('Ungültiges Dateiformat. Import fehlgeschlagen.');
-          }
-        } catch (err) {
-          alert('Fehler beim Lesen der JSON-Datei.');
-        }
-        // Dateiauswahl zurücksetzen
-        e.target.value = '';
-      };
-      reader.readAsText(file);
-    });
+    // 5. MINI EXPORT & IMPORT STEUERUNG - Auf Userwunsch entfernt (Google Sheets dient als 100% Datenbank)
 
     // Filter-Segment Event-Listener
     document.querySelectorAll('.filter-btn').forEach(btn => {
@@ -1794,18 +1699,14 @@
           
           updateSyncStatus('success', 'Importiert');
           setTimeout(() => updateSyncStatus('idle'), 2000);
-          alert('Daten erfolgreich aus Google Tabelle importiert!');
         } else {
           throw new Error(result.message || 'Ungültige Antwortstruktur');
         }
       } catch (err) {
         console.error('Google Sheets import error:', err);
         updateSyncStatus('error', 'Fehler');
-        alert('Fehler beim Laden aus Google Tabelle. Bitte überprüfe die Berechtigungen deiner Web-App und die URL.');
       }
     }
-
-    document.getElementById('btnImportGoogle').addEventListener('click', importFromGoogleSheet);
 
     // 6. INITIALER SEITENSTART
     function populateWeightDropdown() {
@@ -1826,6 +1727,8 @@
     if (GOOGLE_SHEETS_URL) {
       document.getElementById('syncIndicator').style.display = 'flex';
       updateSyncStatus('idle');
+      // Automatisch Daten aus Google Sheets laden beim Start
+      importFromGoogleSheet();
     }
 
     setFormDefaults();
