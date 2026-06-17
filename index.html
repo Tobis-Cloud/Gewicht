@@ -19,6 +19,10 @@
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@200;300;400;500;600&display=swap" rel="stylesheet">
   <!-- Chart.js CDN -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Firebase SDKs (Compat-Versionen für einfache Single-File Integration) -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
   <style>
     /* 1. RESET & SYSTEM TOKENS */
     *, *::before, *::after {
@@ -870,11 +874,146 @@
         margin-bottom: 8px;
       }
     }
+
+    /* 9. OVERLAY CONTAINERS (SETUP & AUTH) */
+    .overlay-container {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 2000;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: rgba(5, 5, 5, 0.8);
+      backdrop-filter: blur(25px);
+      -webkit-backdrop-filter: blur(25px);
+      animation: fadeIn 0.4s ease;
+    }
+
+    .overlay-card {
+      background: var(--glass-bg);
+      backdrop-filter: var(--blur);
+      -webkit-backdrop-filter: var(--blur);
+      border: 1px solid var(--glass-border);
+      border-radius: 28px;
+      padding: 24px;
+      box-shadow: var(--glass-shadow);
+      width: 90%;
+      max-width: 360px;
+      display: flex;
+      flex-direction: column;
+      text-align: center;
+      animation: scaleIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .auth-error {
+      color: var(--color-red);
+      font-size: 11px;
+      margin-top: 8px;
+      margin-bottom: 8px;
+      background: rgba(255, 59, 48, 0.08);
+      border: 1px solid rgba(255, 59, 48, 0.15);
+      border-radius: 8px;
+      padding: 8px 12px;
+      text-align: left;
+      line-height: 1.4;
+    }
+
+    .auth-success {
+      color: var(--color-green);
+      font-size: 11px;
+      margin-top: 8px;
+      margin-bottom: 8px;
+      background: rgba(48, 209, 88, 0.08);
+      border: 1px solid rgba(48, 209, 88, 0.15);
+      border-radius: 8px;
+      padding: 8px 12px;
+      text-align: left;
+      line-height: 1.4;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    @keyframes scaleIn {
+      from { transform: scale(0.95); opacity: 0; }
+      to { transform: scale(1); opacity: 1; }
+    }
   </style>
 </head>
 <body>
   <!-- Ambient Glow Background -->
   <div class="bg-aura"></div>
+
+  <!-- Setup Overlay (wird angezeigt, wenn Firebase Config fehlt) -->
+  <div class="overlay-container" id="setupOverlay" style="display: none;">
+    <div class="overlay-card" style="max-height: 90vh; overflow-y: auto;">
+      <h2 style="font-size: 20px; font-weight: 300; letter-spacing: 2px; text-transform: uppercase; text-shadow: 0 0 8px rgba(182, 102, 255, 0.4); margin-bottom: 8px;">Firebase Setup</h2>
+      <p style="font-size: 11px; color: var(--text-secondary); line-height: 1.4; margin-bottom: 12px;">Kopiere die Firebase-Konfiguration (JSON) aus deiner Firebase-Konsole oder trage die Werte manuell ein.</p>
+      
+      <div class="form-group" style="text-align: left;">
+        <label for="setupConfigJson">Firebase Config JSON</label>
+        <textarea id="setupConfigJson" placeholder='{"apiKey": "...", "authDomain": "...", ...}' style="background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px; color: var(--text-primary); padding: 12px; font-size: 13px; font-family: monospace; outline: none; transition: all 0.3s ease; width: 100%; height: 80px; resize: none;"></textarea>
+      </div>
+      
+      <div style="font-size: 9px; text-transform: uppercase; color: var(--text-secondary); margin: 4px 0;">Oder Manuell</div>
+      
+      <div class="form-group" style="text-align: left; margin-bottom: 8px;">
+        <label for="setupApiKey">API Key</label>
+        <input type="text" id="setupApiKey" style="padding: 8px 12px; font-size: 13px;">
+      </div>
+      <div class="form-group" style="text-align: left; margin-bottom: 8px;">
+        <label for="setupAuthDomain">Auth Domain</label>
+        <input type="text" id="setupAuthDomain" style="padding: 8px 12px; font-size: 13px;">
+      </div>
+      <div class="form-group" style="text-align: left; margin-bottom: 8px;">
+        <label for="setupProjectId">Project ID</label>
+        <input type="text" id="setupProjectId" style="padding: 8px 12px; font-size: 13px;">
+      </div>
+      <div class="form-group" style="text-align: left; margin-bottom: 16px;">
+        <label for="setupAppId">App ID</label>
+        <input type="text" id="setupAppId" style="padding: 8px 12px; font-size: 13px;">
+      </div>
+      
+      <div id="setupError" class="auth-error" style="display: none; margin-bottom: 12px;"></div>
+      
+      <button type="button" class="btn btn-pulse" id="btnSaveConfig">Konfiguration Speichern</button>
+    </div>
+  </div>
+
+  <!-- Auth Overlay (wird angezeigt, wenn nicht eingeloggt) -->
+  <div class="overlay-container" id="authOverlay" style="display: none;">
+    <div class="overlay-card">
+      <h2 style="font-size: 24px; font-weight: 200; letter-spacing: 3px; text-transform: uppercase; text-shadow: 0 0 8px rgba(182, 102, 255, 0.5); margin-bottom: 4px;">Gewicht</h2>
+      <p style="font-size: 11px; color: var(--text-secondary); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 16px;">Dein Gewichts-Tracker</p>
+      
+      <!-- Segment Control -->
+      <div class="filter-segment" style="margin-bottom: 16px;">
+        <button class="filter-btn active" id="btnAuthTabLogin" style="font-size: 11px; padding: 10px 4px;">Anmelden</button>
+        <button class="filter-btn" id="btnAuthTabRegister" style="font-size: 11px; padding: 10px 4px;">Registrieren</button>
+      </div>
+      
+      <form id="authForm">
+        <div class="form-group" style="text-align: left;">
+          <label for="authEmail">E-Mail Adresse</label>
+          <input type="email" id="authEmail" required placeholder="name@domain.de">
+        </div>
+        <div class="form-group" style="text-align: left; margin-bottom: 16px;">
+          <label for="authPassword">Passwort</label>
+          <input type="password" id="authPassword" required placeholder="••••••••" minlength="6">
+        </div>
+        
+        <div id="authError" class="auth-error" style="display: none;"></div>
+        <div id="authSuccess" class="auth-success" style="display: none;"></div>
+        
+        <button type="submit" class="btn btn-pulse" id="btnAuthSubmit" style="margin-top: 8px;">Anmelden</button>
+      </form>
+    </div>
+  </div>
   
   <div class="app-container">
     <!-- Main Screen Header -->
@@ -986,6 +1125,15 @@
         </div>
       </section>
 
+      <!-- Account-Verwaltung -->
+      <section class="section">
+        <h3 class="section-title">Account</h3>
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <button type="button" class="btn" id="btnLogout" style="border-color: rgba(255, 59, 48, 0.4); color: #ff3b30;">Abmelden</button>
+          <button type="button" class="btn-mini" id="btnResetConfig" style="font-size: 8px; margin-top: 4px;">Firebase Config löschen</button>
+        </div>
+      </section>
+
       <!-- Verlaufsliste -->
       <section class="section history-section">
         <h3 class="section-title">Einträge</h3>
@@ -997,23 +1145,18 @@
   </div>
 
   <script>
-    // Globaler Font-Family Standard für Chart.js
+    // 1. GLOBAL SETTINGS & STATE
     Chart.defaults.font.family = "'Outfit', -apple-system, BlinkMacSystemFont, sans-serif";
     Chart.defaults.color = 'rgba(255, 255, 255, 0.4)';
 
-    // 1. ZUSTANDS-DATEN & INITIALISIERUNG
-    const GOOGLE_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbyLOv5Pb1QB5JXVJCVlAGJk71wd8arYleFwfD2IPtWv5gaKyjOpmYbZbyxKXajlx91J3Q/exec';
     let entries = [];
-    try {
-      entries = JSON.parse(localStorage.getItem('weight_tracker_data')) || [];
-    } catch (e) {
-      console.error("Fehler beim Laden der lokalen Gewichtsdaten:", e);
-      entries = [];
-    }
-    let targetWeight = localStorage.getItem('weight_tracker_target') ? parseFloat(localStorage.getItem('weight_tracker_target')) : null;
+    let targetWeight = null;
     let chartInstance = null;
     let activeFilter = 'all'; // '7', '30', '365' oder 'all'
     let currentViewDate = new Date(); // Referenzdatum für die Navigation
+    let activeAuthTab = 'login'; // 'login' oder 'register'
+    let unsubscribeWeights = null;
+    let unsubscribeUser = null;
 
     // Hilfsfunktion: Parsen des Datums im lokalen Kontext (verhindert Zeitzonen-Verschiebung um einen Tag)
     function parseLocalDate(dateStr) {
@@ -1134,8 +1277,6 @@
     }
 
     // 2. RENDERING-FUNKTIONEN
-
-    // Aktualisiert die KPI-Karten
     function updateKPIs() {
       const currentValNode = document.querySelector('#kpiCurrent .kpi-value');
       const currentDateNode = document.getElementById('kpiCurrentDate');
@@ -1215,7 +1356,6 @@
       }
     }
 
-    // Aktualisiert die Eintragsliste im Slide-Over
     function updateHistoryList() {
       const container = document.getElementById('historyList');
       container.innerHTML = '';
@@ -1244,7 +1384,6 @@
         container.appendChild(item);
       });
 
-      // Event-Delegation für die Löschbuttons
       container.querySelectorAll('.btn-delete').forEach(btn => {
         btn.addEventListener('click', (e) => {
           const dateToDelete = e.target.getAttribute('data-date');
@@ -1253,7 +1392,6 @@
       });
     }
 
-    // Rendert das Diagramm neu
     function renderChart() {
       if (chartInstance) {
         chartInstance.destroy();
@@ -1266,7 +1404,7 @@
       if (entries.length === 0) {
         emptyState.classList.add('visible');
         document.querySelector('#emptyState p').innerText = 'Keine Gewichtsdaten vorhanden';
-        document.querySelector('#emptyState .empty-sub').innerText = 'Tippe oben rechts auf das Menü, um dein Gewicht und Zielgewicht einzutragen.';
+        document.querySelector('#emptyState .empty-sub').innerText = 'Trage dein Gewicht und Zielgewicht im Menü ein.';
         if (chartInstance) {
           chartInstance.destroy();
           chartInstance = null;
@@ -1274,10 +1412,8 @@
         return;
       }
 
-      // Sortierung chronologisch
       entries.sort((a, b) => parseLocalDate(a.date) - parseLocalDate(b.date));
 
-      // Filtern nach ausgewähltem Zeitraum & Festlegen des X-Achsen-Zeitraums (tStart bis tEnd)
       const oneDay = 24 * 60 * 60 * 1000;
       const { tStart, tEnd } = updatePeriodRange();
 
@@ -1299,17 +1435,14 @@
 
       emptyState.classList.remove('visible');
 
-      // Konvertierung der X-Werte relativ zu tStart
       const dataPoints = filteredEntries.map(entry => {
         const days = (parseLocalDate(entry.date).getTime() - tStart) / oneDay;
         return { x: days, y: entry.weight };
       });
 
       const chartMaxDays = (tEnd - tStart) / oneDay;
-
       const datasets = [];
 
-      // Gewichtsverlauf Dataset
       const gradient = ctx.createLinearGradient(0, 0, 0, canvas.clientHeight || 250);
       gradient.addColorStop(0, 'rgba(182, 102, 255, 0.22)');
       gradient.addColorStop(1, 'rgba(182, 102, 255, 0)');
@@ -1327,11 +1460,10 @@
         pointHitRadius: 25,
         fill: true,
         backgroundColor: gradient,
-        tension: filteredEntries.length === 1 ? 0 : 0.35, // Keine Kurvenspannung bei nur einem Punkt
+        tension: filteredEntries.length === 1 ? 0 : 0.35,
         spanGaps: true
       });
 
-      // Zielgewicht-Linie Dataset (horizontal)
       if (targetWeight !== null) {
         datasets.push({
           label: 'Ziel',
@@ -1372,12 +1504,10 @@
               callbacks: {
                 title: function(context) {
                   const val = context[0].raw.x;
-                  // +4 Stunden als DST-Puffer
                   const dateObj = new Date(tStart + val * oneDay + 4 * 60 * 60 * 1000);
                   return formatDateString(dateObj);
                 },
                 label: function(context) {
-                  // Unterscheidung zwischen Gewichtsverlauf und Zielgewicht
                   if (context.datasetIndex === 1 && targetWeight !== null) {
                     return `Zielgewicht: ${context.raw.y.toFixed(1)} kg`;
                   }
@@ -1401,9 +1531,7 @@
                 font: { size: 10 },
                 stepSize: filteredEntries.length === 1 ? 1 : undefined,
                 callback: function(value) {
-                  // +4 Stunden als DST-Puffer
                   const dateObj = new Date(tStart + value * oneDay + 4 * 60 * 60 * 1000);
-                  // Zeige Tag und Monat an (z. B. 08.06.)
                   const day = String(dateObj.getDate()).padStart(2, '0');
                   const month = String(dateObj.getMonth() + 1).padStart(2, '0');
                   return `${day}.${month}.`;
@@ -1429,12 +1557,187 @@
       });
     }
 
-    // 3. EVENT-HANDLING & DATA-MUTATION
+    // 3. FIREBASE SETUP & LOGIK
+    let firebaseInitialized = false;
 
-    // Hinzufügen / Überschreiben eines Eintrags
+    // Statusanzeige aktualisieren
+    function updateSyncStatus(status, text) {
+      const indicator = document.getElementById('syncIndicator');
+      const textNode = document.getElementById('syncText');
+      if (!indicator || !textNode) return;
+
+      indicator.style.display = 'flex';
+      indicator.className = 'sync-indicator ' + status;
+      if (status === 'idle') {
+        textNode.innerText = 'Verbunden';
+        indicator.querySelector('.sync-dot').style.backgroundColor = 'var(--color-purple)';
+        indicator.querySelector('.sync-dot').style.boxShadow = '0 0 6px var(--color-purple)';
+      } else if (text) {
+        textNode.innerText = text;
+      }
+    }
+
+    // Deine Firebase Standard-Konfiguration (wird als Fallback geladen)
+    const DEFAULT_FIREBASE_CONFIG = {
+      apiKey: "AIzaSyCfH2LtjvTHvI0MA9IOa2Wquzivf77SbxU",
+      authDomain: "gewicht-tracker01.firebaseapp.com",
+      projectId: "gewicht-tracker01",
+      storageBucket: "gewicht-tracker01.firebasestorage.app",
+      messagingSenderId: "671357470213",
+      appId: "1:671357470213:web:3d0a479abbfa3368ff3e6c"
+    };
+
+    // Konfiguration aus localStorage laden und Firebase initialisieren
+    function initFirebase() {
+      const configStr = localStorage.getItem('firebase_config');
+      const setupOverlay = document.getElementById('setupOverlay');
+      let config = null;
+
+      if (configStr) {
+        try {
+          config = JSON.parse(configStr);
+        } catch (e) {
+          console.error("Fehler beim Parsen der gespeicherten Firebase Config:", e);
+        }
+      }
+
+      // Falls keine Config im localStorage ist, nutzen wir deine Standard-Konfiguration
+      if (!config) {
+        config = DEFAULT_FIREBASE_CONFIG;
+      }
+
+      // Prüfe, ob die geladene Konfiguration gültig ist
+      if (!config || !config.apiKey || !config.projectId) {
+        setupOverlay.style.display = 'flex';
+        return;
+      }
+
+      try {
+        // Verhindern von doppelter Initialisierung
+        if (firebase.apps.length === 0) {
+          firebase.initializeApp(config);
+          
+          // Offline-Persistence für Firestore aktivieren
+          firebase.firestore().enablePersistence().catch((err) => {
+            console.warn("Firestore Offline-Persistence konnte nicht aktiviert werden:", err.code);
+          });
+        }
+        
+        firebaseInitialized = true;
+        setupOverlay.style.display = 'none';
+        
+        // Auth State Listener einrichten
+        setupAuthListener();
+      } catch (err) {
+        console.error("Firebase Initialisierungsfehler:", err);
+        localStorage.removeItem('firebase_config');
+        document.getElementById('setupError').innerText = "Ungültige Konfiguration. Bitte überprüfe das JSON.";
+        document.getElementById('setupError').style.display = 'block';
+        setupOverlay.style.display = 'flex';
+      }
+    }
+
+    // Authentifizierungs-Listener
+    function setupAuthListener() {
+      const authOverlay = document.getElementById('authOverlay');
+      
+      firebase.auth().onAuthStateChanged((user) => {
+        if (user) {
+          // Eingeloggt
+          authOverlay.style.display = 'none';
+          document.getElementById('syncIndicator').style.display = 'flex';
+          updateSyncStatus('syncing', 'Verbinde...');
+          startFirestoreListeners(user.uid);
+        } else {
+          // Nicht eingeloggt
+          stopFirestoreListeners();
+          authOverlay.style.display = 'flex';
+          document.getElementById('syncIndicator').style.display = 'none';
+          
+          // Formular zurücksetzen
+          document.getElementById('authForm').reset();
+          showAuthTab('login');
+        }
+      });
+    }
+
+    // Firestore Listener starten
+    function startFirestoreListeners(userId) {
+      const db = firebase.firestore();
+
+      // Listener 1: Gewichte
+      unsubscribeWeights = db.collection('users').doc(userId).collection('weights')
+        .onSnapshot((snapshot) => {
+          entries = [];
+          snapshot.forEach((doc) => {
+            const data = doc.data();
+            entries.push({
+              date: doc.id,
+              weight: parseFloat(data.weight)
+            });
+          });
+
+          // Chronologisch sortieren
+          entries.sort((a, b) => parseLocalDate(a.date) - parseLocalDate(b.date));
+          localStorage.setItem('weight_tracker_data', JSON.stringify(entries));
+
+          // UI aktualisieren
+          updateKPIs();
+          updateHistoryList();
+          setFormDefaults();
+          renderChart();
+          
+          updateSyncStatus('success', 'Gesichert');
+          setTimeout(() => updateSyncStatus('idle'), 2000);
+        }, (error) => {
+          console.error("Firestore weights snapshot error:", error);
+          updateSyncStatus('error', 'Fehler');
+        });
+
+      // Listener 2: Zielgewicht (User-Profil)
+      unsubscribeUser = db.collection('users').doc(userId)
+        .onSnapshot((doc) => {
+          if (doc.exists && doc.data().targetWeight !== undefined) {
+            targetWeight = parseFloat(doc.data().targetWeight);
+            document.getElementById('inputGoal').value = targetWeight;
+            localStorage.setItem('weight_tracker_target', targetWeight.toString());
+          } else {
+            targetWeight = null;
+            document.getElementById('inputGoal').value = '';
+            localStorage.removeItem('weight_tracker_target');
+          }
+          updateKPIs();
+          renderChart();
+        }, (error) => {
+          console.error("Firestore user profile snapshot error:", error);
+        });
+    }
+
+    // Firestore Listener stoppen
+    function stopFirestoreListeners() {
+      if (unsubscribeWeights) {
+        unsubscribeWeights();
+        unsubscribeWeights = null;
+      }
+      if (unsubscribeUser) {
+        unsubscribeUser();
+        unsubscribeUser = null;
+      }
+      entries = [];
+      targetWeight = null;
+      localStorage.removeItem('weight_tracker_data');
+      localStorage.removeItem('weight_tracker_target');
+    }
+
+    // 4. DATA-MUTATION (FIRESTORE WRITES)
+
+    // Gewicht hinzufügen / aktualisieren
     document.getElementById('weightForm').addEventListener('submit', (e) => {
       e.preventDefault();
       
+      const user = firebase.auth().currentUser;
+      if (!user) return;
+
       const dateVal = document.getElementById('inputDate').value;
       const weightVal = parseFloat(document.getElementById('inputWeight').value);
 
@@ -1445,59 +1748,237 @@
         return;
       }
 
-      const existingIndex = entries.findIndex(item => item.date === dateVal);
-      if (existingIndex !== -1) {
-        // Überschreiben des Gewichts am gleichen Tag
-        entries[existingIndex].weight = weightVal;
-      } else {
-        // Neuen Eintrag hinzufügen
-        entries.push({ date: dateVal, weight: weightVal });
-      }
-
-      // Speichern und aktualisieren
-      localStorage.setItem('weight_tracker_data', JSON.stringify(entries));
+      updateSyncStatus('syncing', 'Sichere...');
       
-      // Formular zurücksetzen, Defaults setzen (heutiges Datum und letztes Gewicht)
-      setFormDefaults();
-
-      updateKPIs();
-      updateHistoryList();
-      renderChart();
-
-      // Mit Google Sheets abgleichen
-      syncToGoogleSheet('save', { date: dateVal, weight: weightVal });
+      const db = firebase.firestore();
+      db.collection('users').doc(user.uid).collection('weights').doc(dateVal).set({
+        weight: weightVal,
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      })
+      .then(() => {
+        // UI Defaults aktualisieren
+        setFormDefaults();
+      })
+      .catch((err) => {
+        console.error("Firestore save error:", err);
+        updateSyncStatus('error', 'Fehler');
+      });
     });
 
-    // Löschen eines Eintrags
+    // Gewicht löschen
     function deleteEntry(dateStr) {
-      entries = entries.filter(item => item.date !== dateStr);
-      localStorage.setItem('weight_tracker_data', JSON.stringify(entries));
-      
-      updateKPIs();
-      updateHistoryList();
-      setFormDefaults();
-      renderChart();
+      const user = firebase.auth().currentUser;
+      if (!user) return;
 
-      // Mit Google Sheets abgleichen
-      syncToGoogleSheet('delete', { date: dateStr });
+      updateSyncStatus('syncing', 'Lösche...');
+
+      const db = firebase.firestore();
+      db.collection('users').doc(user.uid).collection('weights').doc(dateStr).delete()
+      .then(() => {
+        // UI Defaults zurücksetzen
+        setFormDefaults();
+      })
+      .catch((err) => {
+        console.error("Firestore delete error:", err);
+        updateSyncStatus('error', 'Fehler');
+      });
     }
 
-    // Änderung des Zielgewichts
+    // Zielgewicht ändern
     document.getElementById('inputGoal').addEventListener('input', (e) => {
+      const user = firebase.auth().currentUser;
+      if (!user) return;
+
       const val = parseFloat(e.target.value);
+      const db = firebase.firestore();
+
       if (!isNaN(val) && val >= 1 && val <= 500) {
         targetWeight = val;
-        localStorage.setItem('weight_tracker_target', val.toString());
+        db.collection('users').doc(user.uid).set({
+          targetWeight: targetWeight
+        }, { merge: true }).catch(err => console.error("Error setting targetWeight:", err));
       } else {
         targetWeight = null;
-        localStorage.removeItem('weight_tracker_target');
+        db.collection('users').doc(user.uid).set({
+          targetWeight: firebase.firestore.FieldValue.delete()
+        }, { merge: true }).catch(err => console.error("Error deleting targetWeight:", err));
       }
-      
-      updateKPIs();
-      renderChart();
     });
 
-    // 4. SIDE-OVER MENÜSTEUERUNG
+    // 5. SETUP- & AUTH-UI INTERAKTIONEN
+
+    // Firebase Config speichern
+    document.getElementById('btnSaveConfig').addEventListener('click', () => {
+      const jsonStr = document.getElementById('setupConfigJson').value.trim();
+      const apiKey = document.getElementById('setupApiKey').value.trim();
+      const authDomain = document.getElementById('setupAuthDomain').value.trim();
+      const projectId = document.getElementById('setupProjectId').value.trim();
+      const appId = document.getElementById('setupAppId').value.trim();
+      
+      let config = null;
+
+      if (jsonStr) {
+        try {
+          // Versuchen, JSON-Block zu parsen
+          let cleanJson = jsonStr;
+          if (cleanJson.includes('{') && cleanJson.includes('}')) {
+            cleanJson = cleanJson.substring(cleanJson.indexOf('{'), cleanJson.lastIndexOf('}') + 1);
+          }
+          config = JSON.parse(cleanJson);
+        } catch (e) {
+          // Falls JSON-Parser fehlschlägt, versuchen wir, Key-Value Paare zu extrahieren
+          const keyMatches = {
+            apiKey: /apiKey\s*:\s*["']([^"']+)["']/,
+            authDomain: /authDomain\s*:\s*["']([^"']+)["']/,
+            projectId: /projectId\s*:\s*["']([^"']+)["']/,
+            appId: /appId\s*:\s*["']([^"']+)["']/
+          };
+          
+          config = {};
+          let foundCount = 0;
+          for (let key in keyMatches) {
+            const match = jsonStr.match(keyMatches[key]);
+            if (match && match[1]) {
+              config[key] = match[1];
+              foundCount++;
+            }
+          }
+
+          if (foundCount < 3) {
+            document.getElementById('setupError').innerText = "Das JSON konnte nicht verarbeitet werden. Bitte korrigiere die Syntax.";
+            document.getElementById('setupError').style.display = 'block';
+            return;
+          }
+        }
+      } else if (apiKey && authDomain && projectId && appId) {
+        config = { apiKey, authDomain, projectId, appId };
+      } else {
+        document.getElementById('setupError').innerText = "Bitte gib entweder das JSON ein oder fülle alle manuellen Felder aus.";
+        document.getElementById('setupError').style.display = 'block';
+        return;
+      }
+
+      // Prüfe Mindestanforderungen
+      if (!config.apiKey || !config.projectId) {
+        document.getElementById('setupError').innerText = "Die Konfiguration ist unvollständig (apiKey oder projectId fehlt).";
+        document.getElementById('setupError').style.display = 'block';
+        return;
+      }
+
+      document.getElementById('setupError').style.display = 'none';
+      localStorage.setItem('firebase_config', JSON.stringify(config));
+      
+      // Seite neu laden, um Firebase sauber mit der neuen Konfiguration zu initialisieren
+      location.reload();
+    });
+
+    // Firebase Config löschen
+    document.getElementById('btnResetConfig').addEventListener('click', () => {
+      if (confirm("Möchtest du die Firebase-Konfiguration wirklich löschen? Du wirst abgemeldet.")) {
+        firebase.auth().signOut().then(() => {
+          localStorage.removeItem('firebase_config');
+          location.reload();
+        }).catch(err => {
+          localStorage.removeItem('firebase_config');
+          location.reload();
+        });
+      }
+    });
+
+    // Abmelden
+    document.getElementById('btnLogout').addEventListener('click', () => {
+      if (confirm("Möchtest du dich abmelden?")) {
+        firebase.auth().signOut().catch(err => alert("Fehler beim Abmelden: " + err.message));
+        toggleMenu(); // Slide-Over schließen
+      }
+    });
+
+    // Auth Tabs umschalten
+    const btnAuthTabLogin = document.getElementById('btnAuthTabLogin');
+    const btnAuthTabRegister = document.getElementById('btnAuthTabRegister');
+    const btnAuthSubmit = document.getElementById('btnAuthSubmit');
+    const authError = document.getElementById('authError');
+    const authSuccess = document.getElementById('authSuccess');
+
+    function showAuthTab(tab) {
+      activeAuthTab = tab;
+      authError.style.display = 'none';
+      authSuccess.style.display = 'none';
+      
+      if (tab === 'login') {
+        btnAuthTabLogin.classList.add('active');
+        btnAuthTabRegister.classList.remove('active');
+        btnAuthSubmit.innerText = "Anmelden";
+      } else {
+        btnAuthTabRegister.classList.add('active');
+        btnAuthTabLogin.classList.remove('active');
+        btnAuthSubmit.innerText = "Registrieren";
+      }
+    }
+
+    btnAuthTabLogin.addEventListener('click', () => showAuthTab('login'));
+    btnAuthTabRegister.addEventListener('click', () => showAuthTab('register'));
+
+    // Deutsche Fehlermeldungen für Firebase Auth
+    function getGermanErrorMessage(code) {
+      switch (code) {
+        case 'auth/invalid-email':
+          return 'Ungültige E-Mail-Adresse.';
+        case 'auth/user-disabled':
+          return 'Dieser Benutzer wurde deaktiviert.';
+        case 'auth/user-not-found':
+          return 'Es wurde kein Benutzer mit dieser E-Mail gefunden.';
+        case 'auth/wrong-password':
+          return 'Falsches Passwort.';
+        case 'auth/email-already-in-use':
+          return 'Diese E-Mail-Adresse wird bereits von einem anderen Account verwendet.';
+        case 'auth/weak-password':
+          return 'Das Passwort muss mindestens 6 Zeichen lang sein.';
+        case 'auth/invalid-login-credentials':
+          return 'Ungültige E-Mail oder falsches Passwort.';
+        default:
+          return 'Ein Fehler ist aufgetreten. Bitte versuche es erneut.';
+      }
+    }
+
+    // Login & Registrierung Form-Submit
+    document.getElementById('authForm').addEventListener('submit', (e) => {
+      e.preventDefault();
+      
+      const email = document.getElementById('authEmail').value.trim();
+      const password = document.getElementById('authPassword').value;
+      
+      authError.style.display = 'none';
+      authSuccess.style.display = 'none';
+      
+      btnAuthSubmit.disabled = true;
+      const originalBtnText = btnAuthSubmit.innerText;
+      btnAuthSubmit.innerText = activeAuthTab === 'login' ? "Melde an..." : "Registriere...";
+
+      if (activeAuthTab === 'login') {
+        firebase.auth().signInWithEmailAndPassword(email, password)
+          .catch(err => {
+            authError.innerText = getGermanErrorMessage(err.code);
+            authError.style.display = 'block';
+            btnAuthSubmit.disabled = false;
+            btnAuthSubmit.innerText = originalBtnText;
+          });
+      } else {
+        firebase.auth().createUserWithEmailAndPassword(email, password)
+          .then(() => {
+            authSuccess.innerText = "Registrierung erfolgreich! Du wirst angemeldet...";
+            authSuccess.style.display = 'block';
+          })
+          .catch(err => {
+            authError.innerText = getGermanErrorMessage(err.code);
+            authError.style.display = 'block';
+            btnAuthSubmit.disabled = false;
+            btnAuthSubmit.innerText = originalBtnText;
+          });
+      }
+    });
+
+    // 6. MENÜ & NAVIGATION (UNVERÄNDERT)
     const menuToggle = document.getElementById('menuToggle');
     const slideOver = document.getElementById('slideOver');
     const backdrop = document.getElementById('backdrop');
@@ -1518,30 +1999,25 @@
     menuToggle.addEventListener('click', toggleMenu);
     backdrop.addEventListener('click', toggleMenu);
 
-    // 5. MINI EXPORT & IMPORT STEUERUNG - Auf Userwunsch entfernt (Google Sheets dient als 100% Datenbank)
-
-    // Filter-Segment Event-Listener
     document.querySelectorAll('.filter-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
-        document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+        // Nur reagieren, wenn es sich nicht um die Auth-Tab Filter handelt
+        if (e.target.id === 'btnAuthTabLogin' || e.target.id === 'btnAuthTabRegister') return;
+
+        document.querySelectorAll('.filter-btn').forEach(b => {
+          if (b.id !== 'btnAuthTabLogin' && b.id !== 'btnAuthTabRegister') {
+            b.classList.remove('active');
+          }
+        });
         e.target.classList.add('active');
         activeFilter = e.target.getAttribute('data-days');
-        
-        // Zurücksetzen des Navigations-Referenzdatums auf heute
         currentViewDate = new Date();
-        
         renderChart();
       });
     });
 
-    // Zeitraum-Navigation (vor/zurück wischen) Event-Listener
-    document.getElementById('btnPrevPeriod').addEventListener('click', () => {
-      shiftPeriod(-1);
-    });
-
-    document.getElementById('btnNextPeriod').addEventListener('click', () => {
-      shiftPeriod(1);
-    });
+    document.getElementById('btnPrevPeriod').addEventListener('click', () => shiftPeriod(-1));
+    document.getElementById('btnNextPeriod').addEventListener('click', () => shiftPeriod(1));
 
     function shiftPeriod(direction) {
       if (activeFilter === '7') {
@@ -1554,7 +2030,6 @@
       renderChart();
     }
 
-    // Helper: Datum anpassen (+/- Tage)
     function adjustDate(days) {
       const dateInput = document.getElementById('inputDate');
       if (!dateInput.value) return;
@@ -1568,18 +2043,15 @@
       const dateStr = `${year}-${month}-${day}`;
       dateInput.value = dateStr;
       
-      // Gewicht anpassen, falls bereits ein Eintrag existiert
       const existingEntry = entries.find(item => item.date === dateStr);
       if (existingEntry) {
         document.getElementById('inputWeight').value = existingEntry.weight.toFixed(1);
       }
     }
 
-    // Datumstasten Event-Listener
     document.getElementById('btnPrevDay').addEventListener('click', () => adjustDate(-1));
     document.getElementById('btnNextDay').addEventListener('click', () => adjustDate(1));
 
-    // Manuelles Ändern des Datum-Felds
     document.getElementById('inputDate').addEventListener('change', (e) => {
       const selectedDate = e.target.value;
       const existingEntry = entries.find(item => item.date === selectedDate);
@@ -1588,115 +2060,19 @@
       }
     });
 
-    // Gewichtstasten Event-Listener
     document.getElementById('btnDecWeight').addEventListener('click', () => adjustWeight(-0.1));
     document.getElementById('btnIncWeight').addEventListener('click', () => adjustWeight(0.1));
 
     function adjustWeight(amount) {
       const select = document.getElementById('inputWeight');
       let currentVal = parseFloat(select.value);
-      if (isNaN(currentVal)) {
-        currentVal = 75.0;
-      }
+      if (isNaN(currentVal)) currentVal = 75.0;
       let newVal = (currentVal + amount).toFixed(1);
       if (parseFloat(newVal) < 30.0) newVal = "30.0";
       if (parseFloat(newVal) > 250.0) newVal = "250.0";
       select.value = newVal;
     }
 
-    // --- GOOGLE SHEETS SYNC LOGIK ---
-
-    // Statusanzeige aktualisieren
-    function updateSyncStatus(status, text) {
-      const indicator = document.getElementById('syncIndicator');
-      const textNode = document.getElementById('syncText');
-      if (!indicator || !textNode) return;
-
-      indicator.className = 'sync-indicator ' + status;
-      if (status === 'idle') {
-        textNode.innerText = 'Verbunden';
-        indicator.querySelector('.sync-dot').style.backgroundColor = 'var(--color-purple)';
-        indicator.querySelector('.sync-dot').style.boxShadow = '0 0 6px var(--color-purple)';
-      } else if (text) {
-        textNode.innerText = text;
-      }
-    }
-
-    // Daten an Google Sheets übertragen
-    async function syncToGoogleSheet(action, data) {
-      const url = GOOGLE_SHEETS_URL;
-      if (!url) return;
-
-      updateSyncStatus('syncing', 'Sichere...');
-
-      try {
-        let bodyData = {};
-        if (action === 'save') {
-          bodyData = { action: 'save', date: data.date, weight: data.weight };
-        } else if (action === 'delete') {
-          bodyData = { action: 'delete', date: data.date };
-        } else if (action === 'sync_all') {
-          bodyData = { action: 'sync_all', entries: data };
-        }
-
-        // POST über text/plain absenden (vermeidet CORS preflight OPTIONSfehler bei Apps Script)
-        const response = await fetch(url, {
-          method: 'POST',
-          body: JSON.stringify(bodyData),
-          headers: {
-            'Content-Type': 'text/plain'
-          }
-        });
-
-        const result = await response.json();
-        if (result && result.status === 'success') {
-          updateSyncStatus('success', 'Gesichert');
-          setTimeout(() => updateSyncStatus('idle'), 2000);
-        } else {
-          throw new Error(result ? result.message : 'Serverfehler');
-        }
-      } catch (err) {
-        console.error('Google Sheets sync error:', err);
-        updateSyncStatus('error', 'Fehler');
-      }
-    }
-
-    // Daten aus Google Sheets importieren
-    async function importFromGoogleSheet() {
-      const url = GOOGLE_SHEETS_URL;
-      if (!url) return;
-
-      updateSyncStatus('syncing', 'Lade Daten...');
-
-      try {
-        const response = await fetch(url);
-        const result = await response.json();
-
-        if (result && result.status === 'success' && Array.isArray(result.entries)) {
-          entries = result.entries.map(item => ({
-            date: item.date,
-            weight: parseFloat(item.weight)
-          }));
-
-          localStorage.setItem('weight_tracker_data', JSON.stringify(entries));
-          
-          updateKPIs();
-          updateHistoryList();
-          setFormDefaults();
-          renderChart();
-          
-          updateSyncStatus('success', 'Importiert');
-          setTimeout(() => updateSyncStatus('idle'), 2000);
-        } else {
-          throw new Error(result.message || 'Ungültige Antwortstruktur');
-        }
-      } catch (err) {
-        console.error('Google Sheets import error:', err);
-        updateSyncStatus('error', 'Fehler');
-      }
-    }
-
-    // 6. INITIALER SEITENSTART
     function populateWeightDropdown() {
       const select = document.getElementById('inputWeight');
       if (!select) return;
@@ -1710,22 +2086,16 @@
       }
     }
 
+    // 7. INITIALISIERUNG
     populateWeightDropdown();
-
-    if (GOOGLE_SHEETS_URL) {
-      document.getElementById('syncIndicator').style.display = 'flex';
-      updateSyncStatus('idle');
-      // Automatisch Daten aus Google Sheets laden beim Start
-      importFromGoogleSheet();
-    }
-
-    setFormDefaults();
-    if (targetWeight !== null) {
-      document.getElementById('inputGoal').value = targetWeight;
-    }
+    
+    // UI mit eventuell verbliebenen lokalen Daten befüllen
     updateKPIs();
     updateHistoryList();
-    renderChart();
+    setFormDefaults();
+    
+    // Firebase initialisieren (das steuert den weiteren Fluss)
+    initFirebase();
   </script>
 </body>
 </html>
