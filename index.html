@@ -2023,6 +2023,7 @@
       activeAuthTab = tab;
       authError.style.display = 'none';
       authSuccess.style.display = 'none';
+      btnAuthSubmit.disabled = false; // Reaktiviert den Button bei Tab-Wechsel oder Formular-Reset
       
       if (tab === 'login') {
         btnAuthTabLogin.classList.add('active');
