@@ -2126,6 +2126,47 @@
     menuToggle.addEventListener('click', toggleMenu);
     backdrop.addEventListener('click', toggleMenu);
 
+    // Swipe-Gesten für das Slide-Over-Menü auf Mobilgeräten (iPhone)
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let touchEndX = 0;
+    let touchEndY = 0;
+
+    document.addEventListener('touchstart', (e) => {
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+    }, { passive: true });
+
+    document.addEventListener('touchend', (e) => {
+      touchEndX = e.changedTouches[0].clientX;
+      touchEndY = e.changedTouches[0].clientY;
+      handleSwipe();
+    }, { passive: true });
+
+    function handleSwipe() {
+      const diffX = touchStartX - touchEndX; // Positiv = Wischen nach links, Negativ = Wischen nach rechts
+      const diffY = touchStartY - touchEndY;
+      
+      const isOpen = slideOver.classList.contains('open');
+      const windowWidth = window.innerWidth;
+
+      // Nur werten, wenn der Swipe überwiegend horizontal war
+      if (Math.abs(diffX) > Math.abs(diffY)) {
+        if (!isOpen) {
+          // Menü ÖFFNEN: Wischen von rechts nach links.
+          // Der Startpunkt (touchStartX) muss maximal 45 Pixel vom rechten Rand entfernt sein.
+          if (diffX > 50 && touchStartX > windowWidth - 45) {
+            toggleMenu();
+          }
+        } else {
+          // Menü SCHLIESSEN: Wischen von links nach rechts.
+          if (diffX < -50) {
+            toggleMenu();
+          }
+        }
+      }
+    }
+
     document.querySelectorAll('.filter-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
         // Nur reagieren, wenn es sich nicht um die Auth-Tab Filter handelt
